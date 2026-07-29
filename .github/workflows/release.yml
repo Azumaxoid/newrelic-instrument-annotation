@@ -20,7 +20,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test -- --ci
       - run: npm run build
-      - run: npm publish --access public
+      - run: npm publish --access public --loglevel silly
+        env:
+          NPM_CONFIG_LOGLEVEL: silly
       - name: Create GitHub Release
         run: gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes
         env:
