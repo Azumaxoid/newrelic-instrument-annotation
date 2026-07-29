@@ -1,26 +1,31 @@
 # @azumaxoid/newrelic-instrument-annotation
 
-TypeScriptのサービスクラスに、デコレーターベースでNew RelicのAPM自動計装(メソッド単位のセグメント計測 + エラー通知)を適用するユーティリティです。
+A decorator-based utility that applies New Relic APM auto-instrumentation
+(per-method segment tracing + error notification) to TypeScript service classes.
 
-## 特徴
+## Features
 
-- クラスの全publicメソッドを自動的に `newrelic.startSegment` でラップ
-- 同期メソッド・Promiseを返す非同期メソッドの両方に対応
-- 例外発生時に `newrelic.noticeError` を自動呼び出し
-- 同一クラス内で計装済みメソッドが計装済みメソッドを呼ぶ場合(例: `post` → `executePost`)の、同一エラーの多重報告を防止
-- メソッド引数を New Relic のエラー属性として送信する際、`token`/`password`/`secret`/`email` を含むキーを自動マスキング
+- Automatically wraps every public method of a class with `newrelic.startSegment`
+- Supports both synchronous methods and methods returning a `Promise`
+- Automatically calls `newrelic.noticeError` when an exception is thrown
+- Prevents duplicate reporting of the same error when one instrumented method
+  calls another instrumented method on the same class (e.g. `post` → `executePost`)
+- Automatically masks keys containing `token`/`password`/`secret`/`email` when
+  sending method arguments as New Relic error attributes
 
-## インストール
+## Installation
 
 ```bash
 npm install @azumaxoid/newrelic-instrument-annotation
 ```
 
-`newrelic`(New Relic Node.js agent)は `peerDependency` です。ホストアプリケーションに既にインストールされている `newrelic` パッケージ(`^14.1.2`)を利用します。
+`newrelic` (the New Relic Node.js agent) is a `peerDependency`. This package
+uses the `newrelic` package (`^14.1.2`) already installed in the host
+application.
 
-## 使い方
+## Usage
 
-### クラスデコレーターとして (`@InstrumentService`)
+### As a class decorator (`@InstrumentService`)
 
 ```typescript
 import { InstrumentService } from '@azumaxoid/newrelic-instrument-annotation';
@@ -33,9 +38,11 @@ class MyService {
 }
 ```
 
-### Logger注入
+### Logger injection
 
-デフォルトでは内部ログを `console` に出力しますが、任意のロガーを注入できます。ロガーは `info`/`warn`/`error` メソッドを持つオブジェクト(`LoggerLike`)であれば何でも使えます。
+By default, internal logs are written to `console`, but you can inject any
+logger of your own. Any object implementing `info`/`warn`/`error` methods
+(`LoggerLike`) can be used.
 
 ```typescript
 import { InstrumentService, LoggerLike } from '@azumaxoid/newrelic-instrument-annotation';
@@ -50,7 +57,7 @@ const myLogger: LoggerLike = {
 class MyService { /* ... */ }
 ```
 
-### `stringifyArgsForTelemetry` の直接利用(マスキングのみ使いたい場合)
+### Using `stringifyArgsForTelemetry` directly (masking only)
 
 ```typescript
 import { stringifyArgsForTelemetry } from '@azumaxoid/newrelic-instrument-annotation';
@@ -59,29 +66,36 @@ stringifyArgsForTelemetry([{ token: 'secret-value', name: 'ok' }]);
 // => '[{"token":"[REDACTED]","name":"ok"}]'
 ```
 
-## 動作の詳細
+## How it works
 
-- `constructor` および `_` で始まるメソッド名は計装対象から除外されます。
-- 例外を報告した際、そのエラーオブジェクトに `reported = true` を設定します。ホストアプリケーションの最外周エラーハンドラーが `error.reported` を見て再報告を防ぐような実装と組み合わせて使うことを想定しています(このパッケージ自体はそのようなハンドラーに依存しません)。
-- ネストした計装済みメソッド呼び出しで同一のErrorオブジェクトが複数階層を伝播する場合、`WeakSet` により最も内側の階層でのみ `noticeError` を呼び出します。
+- Methods named `constructor` or starting with `_` are excluded from instrumentation.
+- When an error is reported, `reported = true` is set on the error object.
+  This is intended to be combined with a host application's outermost error
+  handler that checks `error.reported` to avoid re-reporting (this package
+  itself does not depend on such a handler existing).
+- When the same Error object propagates through multiple layers of nested
+  instrumented method calls, a `WeakSet` ensures `noticeError` is only called
+  from the innermost layer.
 
 ## API Reference
 
-- `InstrumentService(serviceName: string, options?: InstrumentServiceOptions)` — クラスデコレーター
-- `instrumentServiceClass<T>(ServiceClass: T, serviceName: string, options?: InstrumentServiceOptions): T` — デコレーターの下地となる関数
-- `instrumentMethod(target, methodName, serviceName, options?)` — 単一メソッドの手動計装
-- `stringifyArgsForTelemetry(args: unknown[], maxLength?: number): string` — 引数マスキング + JSON文字列化
-- `LoggerLike` / `InstrumentServiceOptions` — 型定義
+- `InstrumentService(serviceName: string, options?: InstrumentServiceOptions)` — class decorator
+- `instrumentServiceClass<T>(ServiceClass: T, serviceName: string, options?: InstrumentServiceOptions): T` — the function backing the decorator
+- `instrumentMethod(target, methodName, serviceName, options?)` — manual instrumentation of a single method
+- `stringifyArgsForTelemetry(args: unknown[], maxLength?: number): string` — argument masking + JSON stringification
+- `LoggerLike` / `InstrumentServiceOptions` — type definitions
 
 ## Contributing
 
-変更を行う場合は [Changesets](https://github.com/changesets/changesets) を使ってください。
+Please use [Changesets](https://github.com/changesets/changesets) when making changes.
 
 ```bash
 npx changeset
 ```
 
-PRに `.changeset/*.md` を含めてmainにマージすると、CIが自動でバージョンアップPRを作成し、それをマージすると npm へ自動publishされます。
+Once a PR containing a `.changeset/*.md` file is merged into `main`, CI will
+automatically open a version-bump PR; merging that PR publishes the new
+version to npm.
 
 ## License
 
