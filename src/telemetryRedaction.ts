@@ -1,4 +1,11 @@
 /**
+ * Sensitive-data masking utility used by instrumentService.ts when
+ * serializing method arguments as error/span attributes for auto-instrumentation.
+ *
+ * Recursively detects sensitive fields by key name and replaces matching
+ * values with `[REDACTED]`. Targets token/password/secret-like fields, as
+ * well as email.
+ *
  * instrumentService.ts が自動計装のエラー属性・スパン属性としてメソッド引数を
  * シリアライズする際に使う、機密情報マスキングユーティリティ。
  *
@@ -36,6 +43,11 @@ function redactValue(value: unknown, depth: number, seen: Set<unknown>): unknown
 }
 
 /**
+ * Masks sensitive fields in method arguments sent by the decorator's
+ * instrumentation, then JSON-stringifies the result. If serialization fails
+ * (e.g. BigInt values or other exceptions beyond circular references), returns
+ * a placeholder instead of throwing.
+ *
  * デコレーターの計装が送信するメソッド引数を、機密フィールドをマスキングした上でJSON文字列化する。
  * シリアライズに失敗した場合(循環参照以外の例外・BigInt等)は例外を投げずプレースホルダーを返す。
  */

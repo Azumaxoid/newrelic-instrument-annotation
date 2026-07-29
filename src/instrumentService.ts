@@ -4,8 +4,11 @@ import type { InstrumentServiceOptions } from './types';
 import { stringifyArgsForTelemetry } from './telemetryRedaction';
 
 /**
- * New Relic custom instrumentation for service classes
- * Automatically traces all methods in specified service classes
+ * New Relic custom instrumentation for service classes.
+ * Automatically traces all methods in specified service classes.
+ *
+ * サービスクラス向けのNew Relicカスタム計装。
+ * 指定したサービスクラスの全メソッドを自動的にトレースする。
  */
 
 interface ServiceClass {
@@ -19,6 +22,12 @@ function isPromiseLike(value: unknown): value is Promise<unknown> {
 }
 
 /**
+ * When one instrumented method calls another instrumented method on the same
+ * class (e.g. post → executePost), a single error would otherwise be reported
+ * to New Relic once per stack frame as it unwinds through each layer. This
+ * WeakSet prevents re-reporting the same Error object, so only the innermost
+ * layer reports it (a distinct Error thrown later is still reported as usual).
+ *
  * 同一クラス内で計装済みメソッドが計装済みメソッドを呼ぶ場合(例: post → executePost)、
  * 1つのエラーが呼び出しチェーンを巻き戻る際に各階層でnoticeErrorされ、New Relic上で
  * 同じエラーが複数件のイベントとして重複記録されてしまう。同一Errorオブジェクトの
@@ -28,6 +37,11 @@ function isPromiseLike(value: unknown): value is Promise<unknown> {
 const reportedErrors = new WeakSet<object>();
 
 /**
+ * Marks an error as already reported so a host application's outermost error
+ * handler (which may call `newrelic.noticeError` itself when `error.reported`
+ * is not set, to catch errors that were never reported at the service layer)
+ * can skip re-reporting it.
+ *
  * ホストアプリケーションがAPIハンドラーの最外周でエラーを捕捉した際、
  * `e.reported` が立っていなければ自前で `newrelic.noticeError` を呼ぶような、
  * サービス層で報告されなかったエラーを取りこぼさないための仕組みと連携するため、
@@ -40,6 +54,7 @@ function markReported(error: unknown): void {
   try {
     (error as { reported?: boolean }).reported = true;
   } catch {
+    // Ignore error objects that can't hold a `reported` property (e.g. frozen objects)
     // reportedプロパティを持てない(frozen等)エラーオブジェクトは無視する
   }
 }
@@ -56,7 +71,9 @@ function noticeErrorOnce(error: unknown, attributes: Record<string, string | num
 }
 
 /**
- * Instruments all methods of a service class with New Relic tracing
+ * Instruments all methods of a service class with New Relic tracing.
+ *
+ * サービスクラスの全メソッドにNew Relicトレースを計装する。
  */
 export function instrumentServiceClass<T extends ServiceClass>(ServiceClass: T, serviceName: string, options?: InstrumentServiceOptions): T {
   const logger = resolveLogger(options);
@@ -134,7 +151,9 @@ export function instrumentServiceClass<T extends ServiceClass>(ServiceClass: T, 
 }
 
 /**
- * Decorator for automatic service instrumentation
+ * Decorator for automatic service instrumentation.
+ *
+ * サービスの自動計装を行うためのデコレーター。
  */
 export function InstrumentService(serviceName: string, options?: InstrumentServiceOptions) {
   return function<T extends ServiceClass>(constructor: T): T {
@@ -143,7 +162,9 @@ export function InstrumentService(serviceName: string, options?: InstrumentServi
 }
 
 /**
- * Manual method instrumentation for specific methods
+ * Manual method instrumentation for specific methods.
+ *
+ * 特定のメソッドを個別に計装するための手動計装関数。
  */
 export function instrumentMethod(target: Record<string, unknown>, methodName: string, serviceName: string, options?: InstrumentServiceOptions) {
   const logger = resolveLogger(options);
@@ -188,7 +209,9 @@ export function instrumentMethod(target: Record<string, unknown>, methodName: st
 }
 
 /**
- * Batch instrument multiple service classes
+ * Batch instrument multiple service classes.
+ *
+ * 複数のサービスクラスを一括で計装する。
  */
 export function instrumentServices(options?: InstrumentServiceOptions) {
   const logger = resolveLogger(options);
