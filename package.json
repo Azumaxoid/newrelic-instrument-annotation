@@ -1,0 +1,65 @@
+{
+  "name": "@azumaxoid/newrelic-instrument-annotation",
+  "version": "0.0.0",
+  "description": "Decorator-based New Relic APM instrumentation for TypeScript service classes",
+  "license": "MIT",
+  "author": "Azumaxoid",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Azumaxoid/newrelic-instrument-annotation.git"
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src test",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "prepublishOnly": "npm run build",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "npm run build && changeset publish"
+  },
+  "peerDependencies": {
+    "newrelic": "^14.1.2"
+  },
+  "peerDependenciesMeta": {
+    "newrelic": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@types/jest": "^29.5.0",
+    "@types/newrelic": "^9.14.8",
+    "@types/node": "^20.0.0",
+    "eslint": "^9.0.0",
+    "jest": "^29.7.0",
+    "newrelic": "^14.1.2",
+    "ts-jest": "^29.2.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
