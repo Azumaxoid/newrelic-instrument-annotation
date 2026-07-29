@@ -1,18 +1,16 @@
 name: Release
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*'
 permissions:
   contents: write
-  pull-requests: write
   id-token: write
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -20,10 +18,12 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       - run: npm install -g npm@latest
       - run: npm ci
-      - name: Create Release Pull Request or Publish
-        uses: changesets/action@v1
-        with:
-          publish: npm run release
-          version: npm run version-packages
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test -- --ci
+      - run: npm run build
+      - run: npm publish --access public
+      - name: Create GitHub Release
+        run: gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
