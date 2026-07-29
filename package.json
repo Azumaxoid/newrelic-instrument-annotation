@@ -6,7 +6,7 @@
   "author": "Azumaxoid",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Azumaxoid/newrelic-instrument-annotation.git"
+    "url": "git+https://github.com/Azumaxoid/newrelic-instrument-annotation.git"
   },
   "main": "dist/index.js",
   "module": "dist/index.mjs",
