@@ -1,6 +1,6 @@
 {
   "name": "@azumaxoid/newrelic-instrument-annotation",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Decorator-based New Relic APM instrumentation for TypeScript service classes",
   "license": "MIT",
   "author": "Azumaxoid",
