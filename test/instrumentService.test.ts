@@ -1,16 +1,19 @@
 import newrelic from 'newrelic';
 import { InstrumentService, instrumentServiceClass, instrumentMethod } from '../src/instrumentService';
+import { CollectAttributes } from '../src/attributeCollection';
 import type { LoggerLike } from '../src/types';
 
 const newrelicMock = newrelic as unknown as {
   startSegment: jest.Mock;
   noticeError: jest.Mock;
+  addCustomAttributes: jest.Mock;
 };
 
 describe('instrumentServiceClass', () => {
   beforeEach(() => {
     newrelicMock.startSegment.mockClear();
     newrelicMock.noticeError.mockClear();
+    newrelicMock.addCustomAttributes.mockClear();
   });
 
   it('同期メソッドが正常終了する場合、サービス名/メソッド名から成るセグメント名でstartSegmentが呼ばれる', () => {
@@ -45,6 +48,19 @@ describe('instrumentServiceClass', () => {
     expect(caught).toBeInstanceOf(Error);
     expect((caught as { reported?: boolean }).reported).toBe(true);
     expect(newrelicMock.noticeError).toHaveBeenCalledTimes(1);
+  });
+
+  it('@CollectAttributesが付いていないメソッドでは、エラー時でも引数は属性として収集されない(service/methodのみ)', () => {
+    class Target {
+      boom(secret: string) {
+        throw new Error(`sync boom: ${secret}`);
+      }
+    }
+    const Instrumented = instrumentServiceClass(Target, 'Target');
+    const instance = new Instrumented();
+
+    expect(() => instance.boom('super-secret')).toThrow('sync boom');
+    expect(newrelicMock.noticeError).toHaveBeenCalledWith(expect.any(Error), { service: 'Target', method: 'boom' });
   });
 
   it('Promiseを返す非同期メソッドが解決する場合、正しい値が返る', async () => {
@@ -205,5 +221,86 @@ describe('instrumentMethod', () => {
     instrumentMethod(target, 'value', 'ManualTarget', { logger: warnLogger });
 
     expect(warnLogger.warn).toHaveBeenCalled();
+  });
+});
+
+describe('@CollectAttributes', () => {
+  beforeEach(() => {
+    newrelicMock.startSegment.mockClear();
+    newrelicMock.noticeError.mockClear();
+    newrelicMock.addCustomAttributes.mockClear();
+  });
+
+  it('デフォルト(when指定なし)では、エラー時にのみ宣言した属性がnoticeErrorに渡され、成功時はaddCustomAttributesが呼ばれない', () => {
+    class Target {
+      @CollectAttributes(['userId'])
+      fetchUser(userId: string) {
+        return userId;
+      }
+
+      @CollectAttributes(['userId'])
+      boom(userId: string) {
+        throw new Error(`boom: ${userId}`);
+      }
+    }
+    const Instrumented = instrumentServiceClass(Target, 'Target');
+    const instance = new Instrumented();
+
+    instance.fetchUser('u-1');
+    expect(newrelicMock.addCustomAttributes).not.toHaveBeenCalled();
+
+    expect(() => instance.boom('u-1')).toThrow('boom');
+    expect(newrelicMock.noticeError).toHaveBeenCalledWith(expect.any(Error), {
+      service: 'Target',
+      method: 'boom',
+      userId: 'u-1',
+    });
+    expect(newrelicMock.addCustomAttributes).not.toHaveBeenCalled();
+  });
+
+  it("when: 'always'を指定すると、成功時もaddCustomAttributesで属性が付与され、エラー時はnoticeErrorにも同じ属性が含まれる", () => {
+    class Target {
+      @CollectAttributes(['userId'], { when: 'always' })
+      fetchUser(userId: string) {
+        return userId;
+      }
+
+      @CollectAttributes(['userId'], { when: 'always' })
+      boom(userId: string) {
+        throw new Error(`boom: ${userId}`);
+      }
+    }
+    const Instrumented = instrumentServiceClass(Target, 'Target');
+    const instance = new Instrumented();
+
+    instance.fetchUser('u-1');
+    expect(newrelicMock.addCustomAttributes).toHaveBeenCalledWith({ userId: 'u-1' });
+
+    newrelicMock.addCustomAttributes.mockClear();
+
+    expect(() => instance.boom('u-2')).toThrow('boom');
+    expect(newrelicMock.addCustomAttributes).toHaveBeenCalledWith({ userId: 'u-2' });
+    expect(newrelicMock.noticeError).toHaveBeenCalledWith(expect.any(Error), {
+      service: 'Target',
+      method: 'boom',
+      userId: 'u-2',
+    });
+  });
+
+  it('hash: trueを指定した属性はSHA-256でハッシュ化されて送信される', () => {
+    class Target {
+      @CollectAttributes([{ name: 'email', hash: true }])
+      boom(email: string) {
+        throw new Error(`boom: ${email}`);
+      }
+    }
+    const Instrumented = instrumentServiceClass(Target, 'Target');
+    const instance = new Instrumented();
+
+    expect(() => instance.boom('a@example.com')).toThrow('boom');
+
+    const [, attributes] = newrelicMock.noticeError.mock.calls[0];
+    expect(attributes.email).not.toBe('a@example.com');
+    expect(attributes.email).toMatch(/^[0-9a-f]{64}$/);
   });
 });
