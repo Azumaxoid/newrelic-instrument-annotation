@@ -1,7 +1,8 @@
 import newrelic from 'newrelic';
 import { resolveLogger } from './types';
-import type { InstrumentServiceOptions } from './types';
-import { stringifyArgsForTelemetry } from './telemetryRedaction';
+import type { InstrumentServiceOptions, LoggerLike } from './types';
+import { collectAttributesFromArgs, getAttributeCollectionConfig } from './attributeCollection';
+import type { AttributeCollectionConfig } from './attributeCollection';
 
 /**
  * New Relic custom instrumentation for service classes.
@@ -71,6 +72,49 @@ function noticeErrorOnce(error: unknown, attributes: Record<string, string | num
 }
 
 /**
+ * Builds the attributes object passed to `noticeError`. Method arguments are
+ * no longer collected automatically; only attributes explicitly declared via
+ * `@CollectAttributes` are included, on top of the base `service`/`method`.
+ *
+ * noticeErrorに渡す属性オブジェクトを構築する。メソッド引数は自動収集しない。
+ * `@CollectAttributes`で明示的に宣言された属性のみを、基本の`service`/`method`に加えて含める。
+ */
+function buildErrorAttributes(
+  serviceName: string,
+  methodName: string,
+  attributeConfig: AttributeCollectionConfig | undefined,
+  args: unknown[]
+): Record<string, string | number | boolean> {
+  const attributes: Record<string, string | number | boolean> = { service: serviceName, method: methodName };
+  if (attributeConfig) {
+    Object.assign(attributes, collectAttributesFromArgs(attributeConfig, args));
+  }
+  return attributes;
+}
+
+/**
+ * When an attribute config has `when: 'always'`, attaches the collected
+ * attributes to the current transaction on every call (success or failure),
+ * not just when `noticeError` is called.
+ *
+ * 属性設定が`when: 'always'`の場合、noticeError時だけでなく毎回の呼び出しで
+ * 収集した属性を現在のトランザクションに付与する。
+ */
+function applyAlwaysAttributes(attributeConfig: AttributeCollectionConfig, args: unknown[], logger: LoggerLike): void {
+  if (attributeConfig.when !== 'always') {
+    return;
+  }
+  try {
+    const attributes = collectAttributesFromArgs(attributeConfig, args);
+    if (Object.keys(attributes).length > 0) {
+      newrelic.addCustomAttributes(attributes);
+    }
+  } catch (error) {
+    logger.warn('Failed to add custom attributes', { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/**
  * Instruments all methods of a service class with New Relic tracing.
  *
  * サービスクラスの全メソッドにNew Relicトレースを計装する。
@@ -102,33 +146,30 @@ export function instrumentServiceClass<T extends ServiceClass>(ServiceClass: T, 
     // Instrument each method
     methodNames.forEach(methodName => {
       const originalMethod = ServiceClass.prototype[methodName] as (...args: unknown[]) => unknown;
+      const attributeConfig = getAttributeCollectionConfig(ServiceClass.prototype, methodName);
 
       ServiceClass.prototype[methodName] = function(...args: unknown[]) {
         const segmentName = `${serviceName}/${methodName}`;
 
         return newrelic.startSegment(segmentName, true, () => {
+          if (attributeConfig) {
+            applyAlwaysAttributes(attributeConfig, args, logger);
+          }
+
           try {
             const result = originalMethod.apply(this, args);
 
             // Handle async methods (Promise-based)
             if (isPromiseLike(result)) {
               return result.catch((error: Error) => {
-                noticeErrorOnce(error, {
-                  service: serviceName,
-                  method: methodName,
-                  args: stringifyArgsForTelemetry(args)
-                });
+                noticeErrorOnce(error, buildErrorAttributes(serviceName, methodName, attributeConfig, args));
                 throw error;
               });
             }
 
             return result;
           } catch (error) {
-            noticeErrorOnce(error, {
-              service: serviceName,
-              method: methodName,
-              args: stringifyArgsForTelemetry(args)
-            });
+            noticeErrorOnce(error, buildErrorAttributes(serviceName, methodName, attributeConfig, args));
             throw error;
           }
         });
@@ -178,30 +219,30 @@ export function instrumentMethod(target: Record<string, unknown>, methodName: st
     return;
   }
 
+  const attributeConfig = getAttributeCollectionConfig(target, methodName);
+
   target[methodName] = function(...args: unknown[]) {
     const segmentName = `${serviceName}/${methodName}`;
 
     return newrelic.startSegment(segmentName, true, () => {
+      if (attributeConfig) {
+        applyAlwaysAttributes(attributeConfig, args, logger);
+      }
+
       try {
         const result = (originalMethod as (...args: unknown[]) => unknown).apply(this, args);
 
         // Handle async methods
         if (isPromiseLike(result)) {
           return result.catch((error: Error) => {
-            noticeErrorOnce(error, {
-              service: serviceName,
-              method: methodName
-            });
+            noticeErrorOnce(error, buildErrorAttributes(serviceName, methodName, attributeConfig, args));
             throw error;
           });
         }
 
         return result;
       } catch (error) {
-        noticeErrorOnce(error, {
-          service: serviceName,
-          method: methodName
-        });
+        noticeErrorOnce(error, buildErrorAttributes(serviceName, methodName, attributeConfig, args));
         throw error;
       }
     });
