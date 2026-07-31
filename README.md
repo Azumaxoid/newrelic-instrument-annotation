@@ -118,6 +118,27 @@ class UserService {
 }
 ```
 
+#### Skipping a leading/middle argument with `null`
+
+Entries map positionally, so if a method's first (or middle) argument is a
+non-primitive value you don't want to collect (e.g. `session`), pass `null`
+for that position. This keeps every later entry correctly aligned with its
+corresponding argument:
+
+```typescript
+class UserService {
+  @CollectAttributes([null, { name: 'email', hash: true }])
+  async fetchUser(session: Session, email: string) {
+    // ...
+  }
+}
+```
+
+Here `session` (position 0) is never collected, while `email` (position 1)
+is hashed and sent as usual. `null` entries can appear anywhere in the array,
+including consecutively (`[null, null, 'criterianame']`) or between two
+collected entries (`['attemptid', null, 'page']`).
+
 ### Using `stringifyArgsForTelemetry` directly (masking utility)
 
 `stringifyArgsForTelemetry` is a standalone masking + serialization utility.
@@ -151,10 +172,12 @@ are safe to send (use `hash: true` if a value still needs protecting).
 - `InstrumentService(serviceName: string, options?: InstrumentServiceOptions)` — class decorator
 - `instrumentServiceClass<T>(ServiceClass: T, serviceName: string, options?: InstrumentServiceOptions): T` — the function backing the decorator
 - `instrumentMethod(target, methodName, serviceName, options?)` — manual instrumentation of a single method
-- `CollectAttributes(attributes: AttributeDefinition[], options?: CollectAttributesOptions)` — method decorator that opts specific arguments into attribute collection (positional mapping, optional per-attribute SHA-256 hashing, `when: 'error' | 'always'`)
+- `CollectAttributes(attributes: AttributeDefinition[], options?: CollectAttributesOptions)` — method decorator that opts specific arguments into attribute collection (positional mapping, `null` entries to skip a position, optional per-attribute SHA-256 hashing, `when: 'error' | 'always'`)
+- `getAttributeCollectionConfig(target: object, methodName: string): AttributeCollectionConfig | undefined` — looks up the `@CollectAttributes` config registered for a prototype/method pair; exposed so other instrumentation layers (e.g. an OpenTelemetry shim) can build the same attribute set from the same declarations
+- `collectAttributesFromArgs(config: AttributeCollectionConfig, args: unknown[]): Record<string, string | number | boolean>` — builds an attributes object from an argument list per a resolved config; exposed for the same cross-instrumentation reuse case as `getAttributeCollectionConfig`
 - `stringifyArgsForTelemetry(args: unknown[], maxLength?: number): string` — argument masking + JSON stringification (standalone utility)
 - `LoggerLike` / `InstrumentServiceOptions` — type definitions
-- `AttributeDefinition` / `CollectAttributesOptions` / `AttributeCollectionWhen` — type definitions for `@CollectAttributes`
+- `AttributeDefinition` / `CollectAttributesOptions` / `AttributeCollectionWhen` / `AttributeCollectionConfig` / `NormalizedAttributeDefinition` — type definitions for `@CollectAttributes`
 
 ## Contributing
 

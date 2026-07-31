@@ -3,12 +3,17 @@ import { createHash } from 'crypto';
 /**
  * Declares one attribute to collect from a decorated method's arguments (by
  * position). A plain string uses that string as both the source lookup and
- * the New Relic attribute name with no hashing.
+ * the New Relic attribute name with no hashing. `null` marks that position as
+ * skipped (collected as nothing), which lets you skip a leading/middle
+ * non-primitive argument (e.g. `session`) while still mapping later entries
+ * positionally to their corresponding argument.
  *
  * @CollectAttributesが引数(位置順)から収集する属性を1件宣言する。
  * 文字列だけを渡した場合は、そのままNew Relic属性名として使われ、ハッシュ化は行われない。
+ * `null`はその位置を「収集しない」ことを示すプレースホルダーで、先頭/中間の非プリミティブ引数
+ * (例: `session`)をスキップしつつ、後続の宣言を対応する引数位置に正しく揃えるために使う。
  */
-export type AttributeDefinition = string | { name: string; hash?: boolean };
+export type AttributeDefinition = string | { name: string; hash?: boolean } | null;
 
 export type AttributeCollectionWhen = 'error' | 'always';
 
@@ -27,22 +32,25 @@ export interface CollectAttributesOptions {
   when?: AttributeCollectionWhen;
 }
 
-interface NormalizedAttributeDefinition {
+export interface NormalizedAttributeDefinition {
   name: string;
   hash: boolean;
 }
 
 export interface AttributeCollectionConfig {
-  definitions: NormalizedAttributeDefinition[];
+  definitions: (NormalizedAttributeDefinition | null)[];
   when: AttributeCollectionWhen;
 }
 
 const attributeCollectionRegistry = new WeakMap<object, Map<string, AttributeCollectionConfig>>();
 
-function normalizeDefinitions(attributes: AttributeDefinition[]): NormalizedAttributeDefinition[] {
-  return attributes.map(attribute =>
-    typeof attribute === 'string' ? { name: attribute, hash: false } : { name: attribute.name, hash: attribute.hash ?? false }
-  );
+function normalizeDefinitions(attributes: AttributeDefinition[]): (NormalizedAttributeDefinition | null)[] {
+  return attributes.map(attribute => {
+    if (attribute === null) {
+      return null;
+    }
+    return typeof attribute === 'string' ? { name: attribute, hash: false } : { name: attribute.name, hash: attribute.hash ?? false };
+  });
 }
 
 /**
@@ -57,6 +65,12 @@ function normalizeDefinitions(attributes: AttributeDefinition[]): NormalizedAttr
  * class UserService {
  *   @CollectAttributes(['userId', { name: 'email', hash: true }])
  *   async fetchUser(userId: string, email: string) { ... }
+ * }
+ *
+ * @example Skipping a leading non-primitive argument with `null`
+ * class UserService {
+ *   @CollectAttributes([null, { name: 'email', hash: true }])
+ *   async fetchUser(session: Session, email: string) { ... }
  * }
  */
 export function CollectAttributes(attributes: AttributeDefinition[], options?: CollectAttributesOptions) {
@@ -123,6 +137,9 @@ function hashAttributeValue(value: unknown): string {
 export function collectAttributesFromArgs(config: AttributeCollectionConfig, args: unknown[]): Record<string, string | number | boolean> {
   const result: Record<string, string | number | boolean> = {};
   config.definitions.forEach((definition, index) => {
+    if (definition === null) {
+      return;
+    }
     const rawValue = args[index];
     if (rawValue === undefined || rawValue === null) {
       return;

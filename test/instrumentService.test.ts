@@ -303,4 +303,61 @@ describe('@CollectAttributes', () => {
     expect(attributes.email).not.toBe('a@example.com');
     expect(attributes.email).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  it('先頭にnullを指定すると、その位置(session等)の引数はスキップされ、後続の引数だけが位置対応で収集される', () => {
+    class Target {
+      @CollectAttributes([null, { name: 'email', hash: true }])
+      boom(session: { token: string }, email: string) {
+        throw new Error(`boom: ${session.token} ${email}`);
+      }
+    }
+    const Instrumented = instrumentServiceClass(Target, 'Target');
+    const instance = new Instrumented();
+
+    expect(() => instance.boom({ token: 'super-secret-token' }, 'a@example.com')).toThrow('boom');
+
+    const [, attributes] = newrelicMock.noticeError.mock.calls[0];
+    expect(attributes).not.toHaveProperty('session');
+    expect(JSON.stringify(attributes)).not.toContain('super-secret-token');
+    expect(attributes.email).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('複数のnullが連続していても、後続の引数は正しい位置にマッピングされる', () => {
+    class Target {
+      @CollectAttributes([null, null, 'criterianame'])
+      boom(keys: string[], badgeMap: Map<number, unknown> | null, criterianame: string) {
+        throw new Error(`boom: ${criterianame}`);
+      }
+    }
+    const Instrumented = instrumentServiceClass(Target, 'Target');
+    const instance = new Instrumented();
+
+    expect(() => instance.boom(['a', 'b'], null, 'search')).toThrow('boom');
+
+    expect(newrelicMock.noticeError).toHaveBeenCalledWith(expect.any(Error), {
+      service: 'Target',
+      method: 'boom',
+      criterianame: 'search',
+    });
+  });
+
+  it('中間位置のnullを挟んでも、前後の引数は正しい位置にマッピングされる', () => {
+    class Target {
+      @CollectAttributes(['attemptid', null, 'page'])
+      boom(attemptid: number, session: { token: string }, page: number) {
+        throw new Error(`boom: ${attemptid} ${page}`);
+      }
+    }
+    const Instrumented = instrumentServiceClass(Target, 'Target');
+    const instance = new Instrumented();
+
+    expect(() => instance.boom(42, { token: 'secret' }, 3)).toThrow('boom');
+
+    expect(newrelicMock.noticeError).toHaveBeenCalledWith(expect.any(Error), {
+      service: 'Target',
+      method: 'boom',
+      attemptid: 42,
+      page: 3,
+    });
+  });
 });
